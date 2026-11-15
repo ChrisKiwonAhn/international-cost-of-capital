@@ -243,11 +243,16 @@ def parse_te_bonds(html: str) -> pd.DataFrame:
     """Parse the 10Y table(s) on tradingeconomics.com/bonds -> Country, Yield (%), Date."""
     soup = BeautifulSoup(html, "html.parser")
     rows = {}
-    for tr in soup.find_all("tr"):
-        a = tr.find("a", href=re.compile(r"^/[a-z-]+/government-bond-yield/?$"))
-        if not a:
+    link_re = re.compile(r"/([a-z-]+)/government-bond-yield", re.I)
+    links = soup.find_all("a", href=link_re)
+    for a in links:
+        tr = a.find_parent("tr")
+        if tr is None:
             continue
-        country = slug_to_country(a["href"].strip("/").split("/")[0])
+        slug = link_re.search(a["href"]).group(1).lower()
+        if slug in ("country-list", "bonds", "forecast"):
+            continue
+        country = slug_to_country(slug)
         tds = tr.find_all("td")
         val = None
         p = tr.find("td", id="p")
@@ -263,7 +268,11 @@ def parse_te_bonds(html: str) -> pd.DataFrame:
         date = d.get_text(strip=True) if d else ""
         rows.setdefault(country, {"Country": country, "Yield": val, "Date": date})
     if not rows:
-        raise ValueError("no bond rows found in page")
+        title = soup.title.get_text(strip=True)[:60] if soup.title else "none"
+        raise ValueError(
+            f"no bond rows found [diagnostic: {len(html)} chars, title '{title}', "
+            f"{len(links)} bond links, {len(soup.find_all('tr'))} table rows, "
+            f"{len(soup.find_all('script'))} scripts]")
     return pd.DataFrame(rows.values()).sort_values("Country").reset_index(drop=True)
 
 
@@ -462,8 +471,18 @@ def main():
 
     betas, bbb, tax, yields = fetch_betas(), fetch_bbb(), fetch_tax(), fetch_yields()
     beta_df = betas["data"]
+    if not yields["live"]:
+        us_try = fetch_country_yield(DEFAULT_COUNTRY)
+        if us_try["data"] is not None:
+            st.info("Trading Economics: the all-country table could not be read, so yields are "
+                    "taken live from each country's own Trading Economics page instead. "
+                    f"({yields['error']})")
+        else:
+            st.warning("**Trading Economics yields: live fetch failed** – enter the two 10Y yields "
+                       f"under Manual overrides. Table: {yields['error']} | "
+                       f"Country page: {us_try['error']}")
     for name, src in [("Damodaran betas", betas), ("Damodaran BBB spread", bbb),
-                      ("OECD tax rates", tax), ("Trading Economics yields", yields)]:
+                      ("OECD tax rates", tax)]:
         if not src["live"]:
             st.warning(f"**{name}: live fetch failed** – using fallback/placeholder values or "
                        f"per-country lookup. Use manual overrides if needed. ({src['error']})")
