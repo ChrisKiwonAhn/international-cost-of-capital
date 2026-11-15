@@ -434,7 +434,9 @@ def overridable(label, fetched, key, step=0.01, fmt="%.2f", placeholder=0.0, hel
         return v, True
     on = st.toggle(f"Override {label}", key=f"{key}_on", help=help)
     if on:
-        v = st.number_input(label, value=float(fetched), step=step, format=fmt, key=f"{key}_val")
+        # start from the value exactly as displayed, so what you see is what is used
+        v = st.number_input(label, value=round(float(fetched), int(fmt[2])), step=step,
+                            format=fmt, key=f"{key}_val")
         return v, True
     st.caption(f"{label}: **{fetched:{fmt[1:]}}** (fetched)")
     return float(fetched), False
@@ -517,7 +519,7 @@ def main():
 
         st.header("Manual overrides")
         with st.expander("Overwrite fetched data", expanded=False):
-            beta_u, m_beta = overridable("Unlevered beta", fetched_beta, "beta", placeholder=1.0)
+            beta_u, m_beta = overridable("Unlevered beta", fetched_beta, "beta", fmt="%.4f", placeholder=1.0)
             tax_us, m_tus = overridable("U.S. corporate tax rate (%)", tax_us_f, "tus", 0.1, placeholder=25.0)
             if country == DEFAULT_COUNTRY and not m_tus:
                 tax_fc, m_tfc = tax_us, False
@@ -577,7 +579,7 @@ def main():
     st.dataframe(summary.style.format("{:.2%}"), use_container_width=True)
 
     shared = pd.DataFrame(
-        {"Value": [f"{beta_u:.2f}", f"{res['d_e']:.4f}", f"{res['beta_l']:.4f}", f"{erp:.2f}%",
+        {"Value": [f"{beta_u:.4f}", f"{res['d_e']:.4f}", f"{res['beta_l']:.4f}", f"{erp:.2f}%",
                    f"{debt_share:.1f}%", f"{tax_used:.2f}% ({tax_choice})",
                    "manual override" if s_fc_manual is not None else "auto-calculated"]},
         index=["Unlevered beta", "D/E", "Relevered beta", "Equity risk premium", "Debt share",
@@ -621,7 +623,7 @@ def main():
     pct_cols = [c for c in all_df.columns if c.startswith(("Cost", "WACC"))]
     st.dataframe(
         all_df.style.format({**{c: "{:.2%}" for c in pct_cols},
-                             "Unlevered beta": "{:.2f}", "Relevered beta": "{:.2f}"}),
+                             "Unlevered beta": "{:.4f}", "Relevered beta": "{:.4f}"}),
         use_container_width=True, hide_index=True, height=380)
     chart_cols = ["WACC USD"] + ([f"WACC {ccy}"] if f"WACC {ccy}" != "WACC USD" else [])
     st.bar_chart((all_df.set_index("Industry")[chart_cols] * 100), height=420, stack=False,
@@ -634,7 +636,7 @@ def main():
         return "manual override" if manual else ("live" if live else "FALLBACK / placeholder")
 
     sources = pd.DataFrame([
-        ["Unlevered beta", f"{beta_u:.2f}", "Damodaran – betas.xls (U.S. industry averages)",
+        ["Unlevered beta", f"{beta_u:.4f}", "Damodaran – betas.xls (U.S. industry averages)",
          betas["date"], betas["fetched"], status(betas["live"], m_beta), BETAS_URL],
         ["USD BBB spread", f"{s_usd:.2f}%", "Damodaran – ratings table, Baa2/BBB, large non-financial firms",
          bbb["date"], bbb["fetched"], status(bbb["live"], m_s), bbb["url"]],
